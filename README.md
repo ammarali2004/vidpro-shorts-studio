@@ -6,6 +6,8 @@
 ### 🚀 Live Demo
 Try the live deployed app here: **[https://vidpro-shorts-studio.vercel.app](https://vidpro-shorts-studio.vercel.app)**
 
+> **Note (100% Zero-Cost Build):** This entire project is built and hosted at **\$0 cost** using open-source tools and free cloud tiers (Vercel + Railway) with zero paid API keys. Because the cloud backend runs on a shared datacenter IP, **YouTube links may occasionally be rate-limited or bot-blocked by YouTube** — when that happens on the live demo, switch to the **Upload Video File** tab to test the full pipeline, or run the project locally where YouTube URLs work directly.
+
 ---
 
 ## Live Preview & Screenshots
