@@ -3,6 +3,9 @@
 > **100% Open-Source, Zero-API-Key AI YouTube Shorts Research & Vertical Clip Studio**  
 > Turn long-form YouTube videos (or uploaded MP4s) into high-retention **9:16 vertical Shorts** backed by live trend research, audience retention heatmaps, and automated FFmpeg rendering.
 
+### 🚀 Live Demo
+Try the live deployed app here: **[https://vidpro-shorts-studio.vercel.app](https://vidpro-shorts-studio.vercel.app)**
+
 ---
 
 ## Live Preview & Screenshots
