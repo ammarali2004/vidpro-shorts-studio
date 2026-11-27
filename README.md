@@ -68,28 +68,3 @@ npm run dev
 ```
 
 Or on Windows PowerShell, run `.\start.ps1` from the project root and open `http://localhost:3000`.
-
----
-
-## Free Online Deployment (For Your Resume Link)
-
-You can host this full-stack app **100% for free (no credit card required)** using **Hugging Face Spaces** (backend) + **Vercel** (frontend):
-
-### Step 1: Deploy Backend on Hugging Face Spaces (Free 16 GB RAM, Docker)
-1. Create a free account at [huggingface.co](https://huggingface.co) and click **New Space**.
-2. Choose **Space SDK → Docker** (Blank template) and **Free CPU Basic (2 vCPU, 16 GB RAM)**.
-3. Upload or push the contents of the `backend/` folder (`Dockerfile`, `requirements.txt`, `app/`) to your Space.
-4. Once built, your backend API URL will be:
-   ```text
-   https://<your-hf-username>-<your-space-name>.hf.space
-   ```
-   *(Verify by opening `/api/health` on that URL.)*
-
-### Step 2: Deploy Frontend on Vercel (Free Hobby Tier)
-1. Import this GitHub repository in [vercel.com](https://vercel.com).
-2. Set **Root Directory** to `frontend`.
-3. Add Environment Variable:
-   - `NEXT_PUBLIC_API_URL` = `https://<your-hf-username>-<your-space-name>.hf.space`
-4. Click **Deploy** — you now have a live `https://<project>.vercel.app` URL to put on your resume!
-
-> **Note on Cloud Hosting & YouTube**: YouTube occasionally rate-limits or challenges downloads coming from shared cloud datacenter IPs. When hosted online, the **Upload Video File** tab works 100% reliably for anyone testing your live resume link!
