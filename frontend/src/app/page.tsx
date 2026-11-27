@@ -441,9 +441,24 @@ export default function HomePage() {
           </form>
 
           {error && (
-            <div className="animate-fade-up mt-4 flex items-center gap-2.5 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
-              <span>{error}</span>
+            <div className="animate-fade-up mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+                <span>{error}</span>
+              </div>
+              {error.toLowerCase().includes("upload video file") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputMode("upload");
+                    setError(null);
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  Switch to Upload Video
+                </button>
+              )}
             </div>
           )}
         </section>

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import glob
 import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -63,8 +65,29 @@ def find_node_executable() -> Optional[str]:
     return None
 
 
+def _get_cookie_file() -> Optional[str]:
+    """Write optional YOUTUBE_COOKIES_B64 or YOUTUBE_COOKIES env var to a temp Netscape cookie file."""
+    b64_val = os.environ.get("YOUTUBE_COOKIES_B64", "").strip()
+    raw_val = os.environ.get("YOUTUBE_COOKIES", "").strip()
+    content = ""
+    if b64_val:
+        try:
+            content = base64.b64decode(b64_val).decode("utf-8", errors="ignore")
+        except Exception:
+            content = ""
+    elif raw_val:
+        content = raw_val
+
+    if not content:
+        return None
+
+    cookie_path = Path(tempfile.gettempdir()) / "vidpro_yt_cookies.txt"
+    cookie_path.write_text(content, encoding="utf-8")
+    return str(cookie_path)
+
+
 def _base_ydl_opts() -> Dict[str, Any]:
-    """Build hardened yt-dlp base options with Node JS runtime + EJS challenge solver."""
+    """Build hardened yt-dlp base options with Node JS runtime + EJS challenge solver + optional cookies."""
     opts: Dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
@@ -80,7 +103,21 @@ def _base_ydl_opts() -> Dict[str, Any]:
     ffmpeg_exe = find_ffmpeg_executable()
     if ffmpeg_exe:
         opts["ffmpeg_location"] = str(Path(ffmpeg_exe).parent)
+    cookie_file = _get_cookie_file()
+    if cookie_file:
+        opts["cookiefile"] = cookie_file
     return opts
+
+
+def _format_yt_error(exc: Optional[Exception], context: str) -> RuntimeError:
+    msg = str(exc or "Unknown YouTube extraction error")
+    lower = msg.lower()
+    if "confirm you" in lower and "not a bot" in lower:
+        return RuntimeError(
+            "YouTube temporarily blocked this cloud server's IP ('Sign in to confirm you're not a bot'). "
+            "Use 'Upload Video File' or 'Try Instant Demo' below, or set YOUTUBE_COOKIES_B64 in backend env vars."
+        )
+    return RuntimeError(f"{context}: {msg}")
 
 
 def normalize_youtube_url(url: str) -> str:
@@ -98,17 +135,35 @@ def normalize_youtube_url(url: str) -> str:
 def extract_video_metadata_and_heatmap(
     url: str,
 ) -> Tuple[VideoMetadata, List[HeatmapPoint], dict]:
-    """Fetch video metadata, chapters, tags, and YouTube Most Replayed heatmap via yt-dlp."""
-    ydl_opts = {
-        **_base_ydl_opts(),
-        "skip_download": True,
-        "extract_flat": False,
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    """Fetch video metadata, chapters, tags, and YouTube Most Replayed heatmap with client fallbacks."""
+    client_strategies: List[Optional[List[str]]] = [
+        None,
+        ["tv_simply", "android_vr", "ios"],
+        ["android_vr", "tv"],
+        ["mweb", "web_safari", "tv"],
+    ]
+
+    info = None
+    last_error: Optional[Exception] = None
+    for clients in client_strategies:
+        ydl_opts: Dict[str, Any] = {
+            **_base_ydl_opts(),
+            "skip_download": True,
+            "extract_flat": False,
+        }
+        if clients:
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": clients}}
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            if info:
+                break
+        except Exception as exc:
+            last_error = exc
+            continue
 
     if not info:
-        raise RuntimeError("Could not extract metadata from this YouTube URL.")
+        raise _format_yt_error(last_error, "Could not extract metadata from this YouTube URL")
 
     video_id = info.get("id") or "unknown"
     duration = float(info.get("duration") or 0.0)
@@ -155,8 +210,8 @@ def _cleanup_partial_downloads(output_dir: Path) -> None:
 
 def download_source_video(url: str, output_dir: Path) -> Path:
     """
-    Download best compatible MP4 (<=1080p) into output_dir with multi-client fallbacks
-    to avoid YouTube HTTP 403 Forbidden errors.
+    Download best compatible H.264 MP4 (<=1080p) into output_dir with multi-client fallbacks
+    to avoid YouTube HTTP 403 / bot-check errors.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     target_template = str(output_dir / "source.%(ext)s")
@@ -175,11 +230,11 @@ def download_source_video(url: str, output_dir: Path) -> Path:
                 "bestvideo[height<=1080][vcodec^=avc1]+bestaudio/"
                 "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"
             ),
-            "extractor_args": {"youtube": {"player_client": ["tv", "web_safari", "mweb"]}},
+            "extractor_args": {"youtube": {"player_client": ["tv_simply", "android_vr", "ios"]}},
         },
         {
             "format": "best[height<=1080]/best",
-            "extractor_args": {"youtube": {"player_client": ["tv_simply", "ios", "android_vr"]}},
+            "extractor_args": {"youtube": {"player_client": ["tv", "web_safari", "mweb"]}},
         },
     ]
 
@@ -207,7 +262,7 @@ def download_source_video(url: str, output_dir: Path) -> Path:
             last_error = exc
             continue
 
-    raise RuntimeError(f"Failed to download YouTube video after fallback attempts: {last_error}")
+    raise _format_yt_error(last_error, "Failed to download YouTube video")
 
 
 def _parse_json3_subtitles(json3_path: Path) -> List[TranscriptSegment]:
@@ -266,75 +321,73 @@ def extract_transcript(
     Extract timestamped transcript using open-source methods in priority order:
     1. youtube-transcript-api (fast, clean manual or auto captions)
     2. yt-dlp json3 subtitles download
-    3. Local faster-whisper transcription fallback
+    3. Local faster-whisper transcription fallback (when installed)
     """
-    # 1. Try youtube-transcript-api
-    try:
-        from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore
-
-        api = YouTubeTranscriptApi()
-        transcript_list = api.list(video_id)
-        chosen = None
-        source_label = "youtube_subtitles"
+    if url:
         try:
-            chosen = transcript_list.find_manually_created_transcript(["en", "en-US", "en-GB"])
+            from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore
+
+            api = YouTubeTranscriptApi()
+            transcript_list = api.list(video_id)
+            chosen = None
             source_label = "youtube_subtitles"
-        except Exception:
             try:
-                chosen = transcript_list.find_generated_transcript(["en", "en-US", "en-GB"])
-                source_label = "youtube_auto_captions"
+                chosen = transcript_list.find_manually_created_transcript(["en", "en-US", "en-GB"])
+                source_label = "youtube_subtitles"
             except Exception:
-                for tr in transcript_list:
-                    chosen = tr
-                    source_label = "youtube_auto_captions" if tr.is_generated else "youtube_subtitles"
-                    break
+                try:
+                    chosen = transcript_list.find_generated_transcript(["en", "en-US", "en-GB"])
+                    source_label = "youtube_auto_captions"
+                except Exception:
+                    for tr in transcript_list:
+                        chosen = tr
+                        source_label = "youtube_auto_captions" if tr.is_generated else "youtube_subtitles"
+                        break
 
-        if chosen is not None:
-            fetched = chosen.fetch()
-            segments = []
-            for item in fetched:
-                text = getattr(item, "text", None) or (item.get("text") if isinstance(item, dict) else "")
-                start = getattr(item, "start", None)
-                if start is None and isinstance(item, dict):
-                    start = item.get("start", 0.0)
-                duration = getattr(item, "duration", None)
-                if duration is None and isinstance(item, dict):
-                    duration = item.get("duration", 2.5)
-                cleaned = re.sub(r"\s+", " ", str(text).replace("\n", " ")).strip()
-                if cleaned:
-                    s = float(start or 0.0)
-                    d = float(duration or 2.0)
-                    segments.append(TranscriptSegment(start=s, end=s + max(0.4, d), text=cleaned))
-            if segments:
-                return _merge_tiny_segments(segments), source_label
-    except Exception:
-        pass
+            if chosen is not None:
+                fetched = chosen.fetch()
+                segments = []
+                for item in fetched:
+                    text = getattr(item, "text", None) or (item.get("text") if isinstance(item, dict) else "")
+                    start = getattr(item, "start", None)
+                    if start is None and isinstance(item, dict):
+                        start = item.get("start", 0.0)
+                    duration = getattr(item, "duration", None)
+                    if duration is None and isinstance(item, dict):
+                        duration = item.get("duration", 2.5)
+                    cleaned = re.sub(r"\s+", " ", str(text).replace("\n", " ")).strip()
+                    if cleaned:
+                        s = float(start or 0.0)
+                        d = float(duration or 2.0)
+                        segments.append(TranscriptSegment(start=s, end=s + max(0.4, d), text=cleaned))
+                if segments:
+                    return _merge_tiny_segments(segments), source_label
+        except Exception:
+            pass
 
-    # 2. Try yt-dlp subtitle download (json3)
-    try:
-        sub_dir = work_dir / "subs"
-        sub_dir.mkdir(parents=True, exist_ok=True)
-        ydl_opts = {
-            **_base_ydl_opts(),
-            "skip_download": True,
-            "writesubtitles": True,
-            "writeautomaticsub": True,
-            "subtitleslangs": ["en", "en-US", "en-GB", "en.*"],
-            "subtitlesformat": "json3",
-            "outtmpl": str(sub_dir / "cap.%(ext)s"),
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        try:
+            sub_dir = work_dir / "subs"
+            sub_dir.mkdir(parents=True, exist_ok=True)
+            ydl_opts = {
+                **_base_ydl_opts(),
+                "skip_download": True,
+                "writesubtitles": True,
+                "writeautomaticsub": True,
+                "subtitleslangs": ["en", "en-US", "en-GB", "en.*"],
+                "subtitlesformat": "json3",
+                "outtmpl": str(sub_dir / "cap.%(ext)s"),
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
 
-        json3_files = sorted(sub_dir.glob("*.json3"))
-        if json3_files:
-            segments = _parse_json3_subtitles(json3_files[0])
-            if segments:
-                return segments, "youtube_auto_captions"
-    except Exception:
-        pass
+            json3_files = sorted(sub_dir.glob("*.json3"))
+            if json3_files:
+                segments = _parse_json3_subtitles(json3_files[0])
+                if segments:
+                    return segments, "youtube_auto_captions"
+        except Exception:
+            pass
 
-    # 3. Local open-source faster-whisper fallback
     if source_video and source_video.exists():
         try:
             from faster_whisper import WhisperModel  # type: ignore
