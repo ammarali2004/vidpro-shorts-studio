@@ -8,6 +8,8 @@ frontend/node_modules/
 frontend/.next/
 frontend/out/
 frontend/build/
+frontend/.vercel/
+.vercel/
 next-env.d.ts
 
 # Python
