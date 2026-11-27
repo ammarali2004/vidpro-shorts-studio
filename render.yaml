@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: vidpro-shorts-ammar
+    runtime: docker
+    rootDir: backend
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: "8000"
