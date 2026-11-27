@@ -164,6 +164,7 @@ def download_source_video(url: str, output_dir: Path) -> Path:
     strategies: List[Dict[str, Any]] = [
         {
             "format": (
+                "bestvideo[height<=1080][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
                 "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/"
                 "bestvideo[height<=1080]+bestaudio/"
                 "best[height<=1080][ext=mp4]/best[height<=1080]/best"
@@ -171,6 +172,7 @@ def download_source_video(url: str, output_dir: Path) -> Path:
         },
         {
             "format": (
+                "bestvideo[height<=1080][vcodec^=avc1]+bestaudio/"
                 "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"
             ),
             "extractor_args": {"youtube": {"player_client": ["tv", "web_safari", "mweb"]}},

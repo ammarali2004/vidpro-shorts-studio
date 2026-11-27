@@ -177,11 +177,13 @@ def render_vertical_short(
         )
 
     if crop_mode == CropMode.BLUR_FILL:
-        # Full-frame 16:9 preserved cleanly (zero zoom/cut-off) over cinematic blurred 9:16 canvas
+        # Full-frame 16:9 preserved cleanly (zero zoom/cut-off) over cinematic blurred 9:16 canvas.
+        # Blur at 1/4 resolution then upscale for ~16x faster CPU rendering with identical smoothness.
         fg = (
             "[0:v]split=2[bg][fg];"
-            "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,boxblur=30:8,eq=brightness=-0.16:saturation=1.15[bgblur];"
+            "[bg]scale=270:480:force_original_aspect_ratio=increase,"
+            "crop=270:480,boxblur=8:2,eq=brightness=-0.16:saturation=1.15,"
+            "scale=1080:1920:flags=bilinear[bgblur];"
             "[fg]scale=1080:-2:force_original_aspect_ratio=decrease[fgscaled];"
             "[bgblur][fgscaled]overlay=(W-w)/2:max(140\\,(H-h)/2-70)[v]"
         )
@@ -212,8 +214,9 @@ def render_vertical_short(
 
         fg = (
             "[0:v]split=2[bg][fg];"
-            "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,boxblur=30:8,eq=brightness=-0.18:saturation=1.12[bgblur];"
+            "[bg]scale=270:480:force_original_aspect_ratio=increase,"
+            "crop=270:480,boxblur=8:2,eq=brightness=-0.18:saturation=1.12,"
+            "scale=1080:1920:flags=bilinear[bgblur];"
             f"[fg]crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
             "scale=1080:-2:flags=lanczos[fgscaled];"
             "[bgblur][fgscaled]overlay=(W-w)/2:max(80\\,(H-h)/2-50)[v]"
@@ -270,7 +273,7 @@ def render_vertical_short(
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "superfast",
         "-crf",
         "22",
         "-pix_fmt",
