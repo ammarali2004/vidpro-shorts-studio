@@ -1,0 +1,11 @@
+frontend/
+docs/
+.git/
+.gitignore
+README.md
+render.yaml
+start.ps1
+backend/workspace/
+**/__pycache__/
+*.pyc
+.env*
